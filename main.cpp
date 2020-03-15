@@ -70,6 +70,7 @@ WDigraph* read_city_graph_undirected(string filename, WDigraph& graph, unordered
     		}
 
     	}
+    	file.close();
 
     }
     return &graph;
@@ -92,52 +93,77 @@ int getClosestVertex(long long lat, long long lon, unordered_map<int, Point>&poi
     return minIndex;
 }
 
+void inputToOutput(string ifilename, string ofilename,  WDigraph& graph, unordered_map<int, Point>&points){
+    unordered_map<int, PIL> searchTree;
+    list<int> path;
+    ifstream ifile(ifilename);
+    ofstream ofile(ofilename);
+    string str;
+    if(ifile.is_open() && ofile.is_open()){
+    	string::size_type sz;
+        while(getline(ifile, str)){
+            if (str[0] == 'R'){
+                size_t space1 = str.find(" ");
+                size_t space2 = str.find(" ", space1+1);
+                size_t space3 = str.find(" ", space2+1);
+                size_t space4 = str.find(" ", space3+1);
+                string lats1 = str.substr(space1+1, (space2-1)-(space1));
+                string lons1 = str.substr(space2+1, (space3-1)-(space2));
+                string lats2 = str.substr(space3+1, (space4-1)-(space3));
+                string lons2 = str.substr(space4+1, (str.length()-1)-(space4));
+                long long lat1 = stoi(lats1);
+                long long lon1 = stoi(lons1);                
+                long long lat2 = stoi(lats2);
+                long long lon2 = stoi(lons2);
+                int vertex1 = getClosestVertex(lat1, lon1, points);
+                int vertex2 = getClosestVertex(lat2, lon2, points);
+                dijkstra(graph, vertex1, searchTree);
+                    // read off a path
+                if (searchTree.find(vertex2) == searchTree.end()) {
+                  ofile << "N 0" << endl;
+                }
+                else {
+                    int stepping = vertex2;
+                    int count = 0;
+                    while (stepping != vertex1) {
+                        path.push_front(stepping);
+                        count++;
+                        // crawl up the search tree one step
+                        stepping = searchTree[stepping].first;
+                    }
+                    path.push_front(vertex1);
+                    ofile << "N " << count+1 << endl;
+                }
+		        list<int>::iterator it = path.begin();
+	            while (getline(ifile, str)){
+		            if(str[0] == 'A'){            
+		                if(it != path.end()){
+		                    ofile << "W " << points[*it].lat << " " << points[*it].lon << endl;
+		                    it++;
+		                }
+		                else{
+		                    ofile << "E" << endl;
+		                    break;
+		                }
+		            }   
+		            else{
+		            	break;
+		            }
+	            }
+            }
+        }
+        ifile.close();
+        ofile.close();
+    }
+}
+
 int main(int argc, char *argv[]) {
     WDigraph graph;
     unordered_map<int, Point> points;
-    unordered_map<int, PIL> searchTree;
-    if(argc == 2)
-    {
-        WDigraph* g = read_city_graph_undirected(argv[1],graph, points);
-    }
-    while(true)
-    {
-
-        char first;
-        cin.clear();
-        cin >> first;
-        if(first == 'R')
-        {
-            long long lat1, lon1, lat2, lon2;
-            cin >> lat1 >> lon1 >> lat2 >> lon2;
-            int vertex1 = getClosestVertex(lat1, lon1, points);
-            int vertex2 = getClosestVertex(lat2, lon2, points);
-            dijkstra(graph, vertex1, searchTree);
-                // read off a path
-            list<int> path;
-            if (searchTree.find(vertex2) == searchTree.end()) {
-              cout << "Vertex " << vertex2 << " not reachable from " << vertex1 << endl;
-            }
-            else {
-                int stepping = vertex2;
-                int count = 0;
-                while (stepping != vertex1) {
-                    path.push_front(stepping);
-                    count++;
-                    // crawl up the search tree one step
-                    stepping = searchTree[stepping].first;
-                }
-                path.push_front(vertex1);
-                cout << "N " << count+1 << endl;
-                char arduino;
-                for (auto it : path) {
-                    cin >> arduino;
-                    if(arduino == 'A'){
-                        cout << "W: " << points[it].lat << " " << points[it].lon << endl;;
-                    }
-                }
-                cout << "E" << endl;
-            }
-        }
+    WDigraph* g = read_city_graph_undirected("edmonton-roads-2.0.1.txt", graph, points);
+    if(argc == 3)
+    {	
+        inputToOutput(argv[1], argv[2], graph, points);
+		return 0;
     }
 }
