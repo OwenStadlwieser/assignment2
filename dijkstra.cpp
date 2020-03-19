@@ -9,6 +9,11 @@ using namespace std;
 
 typedef pair<int, long long> PIL;
 
+/*
+	Description: Computes least cost path that start from a given vertex using a binary heap.
+	Parameters:	 const WDigraph& graph, int startVertex, unordered_map<int, PIL>& tree
+	Returns: void
+*/
 void dijkstra(const WDigraph& graph, int startVertex, unordered_map<int, PIL>& tree){
 
 	BinaryHeap<PIL, int> events;
