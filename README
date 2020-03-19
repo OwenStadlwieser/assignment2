@@ -1,0 +1,14 @@
+Martin Rudolf and Owen Stadlwieser
+CMPUT275 Assignment 2 Part 1
+W2020
+
+Description: Driving Route Finder (like Google Maps) for the Edmonton Area. The user can submit a request in a text file with their starting and ending coordinates from which the program will find a least cost path between the two. 
+
+Files Contained:
+Makefile wdigraph.cpp server.cpp dijkstra.cpp digraph.cpp dijkstra.h digraph.h wdigraph.h heap.h
+
+Makefile Targets:
+server(all) dijkstra.o server.o digraph.o  wdigraph.o clean
+
+Running Instructions:
+Navigate to the directory containing the files of "Files Contained". Enter "make server" to generate the "server" executable. Then, enter "./server < sample_input.txt > my_output.txt"; where sample_input.txt is a text file from which the program will read the start and end vertices for navigation and my_output.txt is the name of the desired text file to write the waypoints to. 
