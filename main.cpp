@@ -1,169 +1,211 @@
-#include <string>
-#include <cmath>
-#include <fstream>
-#include <iostream>
-#include <list>
-#include "dijkstra.h"
-#include "wdigraph.h"
-#include "digraph.h"
-using namespace std;
+#include "globals.h"
+#include "block.h"
+#include "swipeManager.h"
+cube Mcube;
+MCUFRIEND_kbv tft;
+// forward declaration for redrawing the cursor
+TouchScreen ts = TouchScreen(XP, YP, XM, YM, 300);
 
-typedef pair<int, long long> PIL;
-struct Point{
-    long long lon;
-    long long lat;
-};
-
-int numPoints = 0;
-long long manhattan(const Point& pt1, const Point& pt2)
+// different than SD
+Sd2Card card;
+Square frontSquares[3][3];
+Square sideSquares[3][3];
+Square topSquares[3][3];
+TouchCords touches;
+bool scrambled = false;
+long long time1;
+int count = 0;
+void setup()
 {
-    return abs(pt1.lon - pt2.lon) + abs(pt1.lat - pt2.lat);
+	init();
+
+	Serial.begin(9600);
+
+	pinMode(JOY_SEL, INPUT_PULLUP);
+
+	tft.reset();             // hardware reset
+	uint16_t ID = tft.readID();    // read ID from display
+	Serial.print("ID = 0x");
+	Serial.println(ID, HEX);
+	if (ID == 0xD3D3) ID = 0x9481; // write-only shield
+
+	// must come before SD.begin() ...
+	tft.begin(ID);                 // LCD gets ready to work
+
+	Serial.print("Initializing SD card...");
+	if (!SD.begin(SD_CS)) {
+		Serial.println("failed! Is it inserted properly?");
+		while (true) {}
+	}
+	Serial.println("OK!");
+	Serial.print("Initializing SPI communication for raw reads...");
+	if (!card.init(SPI_HALF_SPEED, SD_CS)) {
+		Serial.println("failed! Is the card inserted properly?");
+		while (true) {}
+	}
+	tft.setRotation(1);	
+	tft.setCursor(400, 10);
+	tft.setTextColor(0x001F);
+	tft.setTextSize(4);
+	tft.fillScreen(TFT_WHITE);
+	tft.println(0);
+	tft.fillRect(10, 140, 100, 40, TFT_RED);
+	tft.drawRect(10, 140, 100, 40, TFT_BLACK);
+	tft.fillRect(10, 190, 100, 40, BLUE);
+	tft.drawRect(10, 190, 100, 40, TFT_BLACK);
+	tft.setCursor(13, 153);
+	tft.setTextSize(2.5);
+	tft.setTextColor(TFT_WHITE);
+	tft.println("Scramble");
+	tft.setCursor(13, 203);
+	tft.println("Solve");
+	tft.setTextColor(0x001F);
+	tft.setTextSize(4);
+
 }
 
-long long manhattan(const Point& pt1, int lon, int lat)
+
+/*
+	Description: Checks if cube is solved
+	Parameters:
+	Returns: bool
+*/
+bool solved()
 {
-    return abs(pt1.lon - lon) + abs(pt1.lat - lat);
+	int color;
+	for(int i = 0; i < 6; i++)
+	{
+		color = Mcube.cubeMatrix[i][0][0];
+		for(int j = 0; j < 6; j++)
+		{
+			for(int k = 0; k < 6; k++)
+			{
+				if(Mcube.cubeMatrix[i][j][k] != color)
+				{
+					return false;
+				}
+			}
+		}
+	}
+	return true;
 }
 
-WDigraph* read_city_graph_undirected(string filename, WDigraph& graph, unordered_map<int, Point>&points) 
+/*
+	Description: Sets up game environment and certain functionalities
+	Parameters:
+	Returns:
+*/
+void gameLoop()
 {
-    ifstream file(filename);
-    string str;
-    vector<int> pos;
-    Point point;
-    if(file.is_open())
-    {
-    	string::size_type sz;
-    	while(getline(file, str))
-    	{
-    		if(str[0] == 'V')
-    		{
-    			size_t found = str.find(",");
-    			size_t found1 = str.find(",", found+1);
-                size_t found2 = str.find(",", found1+1);
-    			string index1s = str.substr(found+1,(found1-1)-(found));
-                string lats = str.substr(found1+1, (found2-1)- found1);
-                string lons = str.substr(found2+1, (str.length()-1)-found2);
-                lats.erase(lats.begin()+2);
-                lons.erase(lons.begin()+4);
-    			int index = stoi(index1s, &sz);
-                long long lat = stoi(lats);
-                long long lon = stoi(lons);
-                lat = lat/10;
-                lon = lon /10;
-    			graph.addVertex(index);
-                point.lon = lon;
-                point.lat = lat;
-                points[index] = point;
-                numPoints++;
-    		}
-    		else if(str[0] == 'E')
-    		{
-    			size_t found = str.find(",");
-    			size_t found1 = str.find(",", found+1);
-    			size_t found2 = str.find(",", found1+1);
-    			string index1s = str.substr(found+1, (found1-1)-(found));
-    			string index2s = str.substr(found1+1,(found2-1)-(found1));
-    			int index1 = stoi(index1s, &sz);
-    			int index2 = stoi(index2s, &sz);
-    			graph.addEdge(index1, index2, manhattan(points[index1], points[index2]));
-    		}
+	getPoint(touches.xpos[0], touches.ypos[0]);
+	// first row front
 
-    	}
-    	file.close();
+	if(scrambled && (((int)((millis()-time1)/1000)) - count) >= 1)
+	{
+		tft.fillRect(400, 10, 80, 40, WHITE);
+		tft.setCursor(400, 10);
+		tft.println((int)((millis()-time1)/1000));
+		count = (int)((millis()-time1)/1000);
+	}
+	for(int j = 0; j < 3; j++)
+	{
+		for(int i = 0; i < 3; i++)
+		{
+			if (touches.xpos[0] > frontSquares[0][i].D2positionUpper[0][0] && touches.xpos[0] < frontSquares[0][i].D2positionUpper[1][0])
+			{
+				if (touches.ypos[0] > frontSquares[j][i].D2positionUpper[0][1] && touches.ypos[0] < frontSquares[j][i].D2positionLower[2][1])
+				{
+					// i = 0 first collumn, 1 = middle, 2 = last
+					delay(2);
+					checkNextPoint(i, j, true);
+					break;
+				}
+			}
+			if (touches.xpos[0] < sideSquares[0][i].D2positionUpper[0][0] && touches.xpos[0] > sideSquares[0][i].D2positionUpper[1][0])
+			{
+				if (touches.ypos[0] > sideSquares[j][i].D2positionUpper[0][1] && touches.ypos[0] < sideSquares[j][i].D2positionLower[2][1])
+				{
+					// i = 0 first collumn, 1 = middle, 2 = last
+					delay(2);
+					checkNextPoint(i, j, false);
+					break;
+				}
+			}
+		}
+	}
+	if(touches.xpos[0] > frontSquares[0][0].D2positionUpper[0][0] && touches.xpos[0] < frontSquares[0][2].D2positionUpper[1][0] 
+		&& (double)touches.ypos[0] < (frontSquares[0][0].D2positionUpper[0][1] -
+		(double)(touches.xpos[0] - frontSquares[0][0].D2positionUpper[0][0]) * (25.0/40.0)))
+	{
+		Serial.println("Flip back left");
+		Mcube.flipLeft();
+		delay(250);
+	}
+	else if(touches.xpos[0] > sideSquares[0][2].D2positionUpper[1][0] && touches.xpos[0] < sideSquares[0][0].D2positionUpper[0][0] 
+		&& (double)touches.ypos[0] < (sideSquares[0][0].D2positionUpper[0][1]
+		 + (double)(touches.xpos[0] - sideSquares[0][0].D2positionUpper[0][0]) * (25.0/40.0)))
+	{
+		Serial.println("Flip back right");
+		Mcube.flipUp();
+		delay(250);
+	}
+	else if(touches.xpos[0] > frontSquares[0][0].D2positionUpper[0][0] && touches.xpos[0] < frontSquares[0][2].D2positionUpper[1][0] 
+		&& (double)touches.ypos[0] > (frontSquares[2][0].D2positionLower[1][1] +
+		(double)(touches.xpos[0] - frontSquares[0][0].D2positionUpper[0][0]) * (25.0/40.0)))
+	{
+		Serial.println("Flip front left");
+		Mcube.flipDown();
+		delay(250);
+	}
+	else if(touches.xpos[0] > sideSquares[0][2].D2positionUpper[1][0] && touches.xpos[0] < sideSquares[0][0].D2positionUpper[0][0] 
+	&& (double)touches.ypos[0] > (sideSquares[2][0].D2positionLower[1][1]
+	 - (double)(touches.xpos[0] - sideSquares[0][0].D2positionUpper[0][0]) * (25.0/40.0)))
+	{
+		Serial.println("Flip front right");
+		Mcube.flipRight();
+		delay(250);
+	}
+	// scramble button
+	else if(touches.xpos[0] > 10 && touches.xpos[0] < 110 && touches.ypos > 140 && touches.ypos[0] < 180)
+	{
+		// scramble draws over part of number in top right 
+		tft.fillRect(0, 0, 480, 20, WHITE);
+		scrambled = true;
+		scramble();
+		time1 = millis();
+	}
+	// solve button
+	else if(touches.xpos[0] > 10 && touches.xpos[0] < 110 && touches.ypos > 190 && touches.ypos[0] < 230)
+	{
+		scrambled =false;
+		Mcube.solve();
+	}
+	if(solved() && scrambled)
+	{
+		tft.setTextSize(2.5);
+		tft.fillRect(0, 0, 480, 20, WHITE);
+		tft.setCursor(135, 2);
+		tft.print("Congratulations you solved the cube in ");
+		tft.print((int)((millis()-time1)/1000));
+		tft.print(" seconds");
+		scrambled = false;
+	}
 
-    }
-    return &graph;
 }
-int getClosestVertex(long long lat, long long lon, unordered_map<int, Point>&points)
+
+int main()
 {
-    long long minDist = 0;
-    int minIndex;
-    int i = 0;
-    for(auto& e : points)
-    {
-        long long dist = manhattan(e.second, lon, lat);
-        if(dist < minDist || (i == 0))
-        {
-            minDist = dist;
-            minIndex = e.first;
-        }
-        i++;
-    }
-    return minIndex;
-}
+	setup();
+	bool gameLive = true;
+	Mcube.drawCube();
+	while (gameLive)
+	{
+		gameLoop();
+		for(int i = 0; i < 2; i++)
+		{
+			touches.xpos[i] = 0;
+			touches.ypos[i] = 0;
+		}
+	}
 
-void inputToOutput(string ifilename, string ofilename,  WDigraph& graph, unordered_map<int, Point>&points){
-    unordered_map<int, PIL> searchTree;
-    list<int> path;
-    ifstream ifile(ifilename);
-    ofstream ofile(ofilename);
-    string str;
-    if(ifile.is_open() && ofile.is_open()){
-    	string::size_type sz;
-        while(getline(ifile, str)){
-            if (str[0] == 'R'){
-                size_t space1 = str.find(" ");
-                size_t space2 = str.find(" ", space1+1);
-                size_t space3 = str.find(" ", space2+1);
-                size_t space4 = str.find(" ", space3+1);
-                string lats1 = str.substr(space1+1, (space2-1)-(space1));
-                string lons1 = str.substr(space2+1, (space3-1)-(space2));
-                string lats2 = str.substr(space3+1, (space4-1)-(space3));
-                string lons2 = str.substr(space4+1, (str.length()-1)-(space4));
-                long long lat1 = stoi(lats1);
-                long long lon1 = stoi(lons1);                
-                long long lat2 = stoi(lats2);
-                long long lon2 = stoi(lons2);
-                int vertex1 = getClosestVertex(lat1, lon1, points);
-                int vertex2 = getClosestVertex(lat2, lon2, points);
-                dijkstra(graph, vertex1, searchTree);
-                    // read off a path
-                if (searchTree.find(vertex2) == searchTree.end()) {
-                  ofile << "N 0" << endl;
-                }
-                else {
-                    int stepping = vertex2;
-                    int count = 0;
-                    while (stepping != vertex1) {
-                        path.push_front(stepping);
-                        count++;
-                        // crawl up the search tree one step
-                        stepping = searchTree[stepping].first;
-                    }
-                    path.push_front(vertex1);
-                    ofile << "N " << count+1 << endl;
-                }
-		        list<int>::iterator it = path.begin();
-	            while (getline(ifile, str)){
-		            if(str[0] == 'A'){            
-		                if(it != path.end()){
-		                    ofile << "W " << points[*it].lat << " " << points[*it].lon << endl;
-		                    it++;
-		                }
-		                else{
-		                    ofile << "E" << endl;
-		                    break;
-		                }
-		            }   
-		            else{
-		            	break;
-		            }
-	            }
-            }
-        }
-        ifile.close();
-        ofile.close();
-    }
-}
-
-int main(int argc, char *argv[]) {
-    WDigraph graph;
-    unordered_map<int, Point> points;
-    WDigraph* g = read_city_graph_undirected("edmonton-roads-2.0.1.txt", graph, points);
-    if(argc == 3)
-    {	
-        inputToOutput(argv[1], argv[2], graph, points);
-		return 0;
-    }
 }
